@@ -25,6 +25,7 @@ import type { MediaPlaylist } from './types/media-playlist';
 import type { HlsConfig } from './config';
 import type { Level } from './types/level';
 import type { Fragment } from './loader/fragment';
+import type { BufferInfo } from './utils/buffer-helper';
 
 /**
  * @module Hls
@@ -583,6 +584,18 @@ export default class Hls implements HlsEventEmitter {
   }
 
   /**
+   * get time to first byte estimate
+   * @type {number}
+   */
+  get ttfbEstimate(): number {
+    const { bwEstimator } = this.abrController;
+    if (!bwEstimator) {
+      return NaN;
+    }
+    return bwEstimator.getEstimateTTFB();
+  }
+
+  /**
    * Capping/max level value that should be used by automatic level selection algorithm (`ABRController`)
    * @type {number}
    */
@@ -677,6 +690,10 @@ export default class Hls implements HlsEventEmitter {
    */
   public get playingDate(): Date | null {
     return this.streamController.currentProgramDateTime;
+  }
+
+  public get mainForwardBufferInfo(): BufferInfo | null {
+    return this.streamController.getMainFwdBufferInfo();
   }
 
   /**
@@ -969,3 +986,4 @@ export type {
   SubtitleTrackSwitchData,
 } from './types/events';
 export type { AttrList } from './utils/attr-list';
+export type { BufferInfo } from './utils/buffer-helper';

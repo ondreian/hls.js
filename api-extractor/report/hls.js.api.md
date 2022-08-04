@@ -219,6 +219,16 @@ export interface BufferFlushingData {
     type: SourceBufferName | null;
 }
 
+// Warning: (ae-missing-release-tag) "BufferInfo" is exported by the package, but it is missing a release tag (@alpha, @beta, @public, or @internal)
+//
+// @public (undocumented)
+export type BufferInfo = {
+    len: number;
+    start: number;
+    end: number;
+    nextStart?: number;
+};
+
 // Warning: (ae-missing-release-tag) "CapLevelControllerConfig" is exported by the package, but it is missing a release tag (@alpha, @beta, @public, or @internal)
 //
 // @public (undocumented)
@@ -922,6 +932,8 @@ class Hls implements HlsEventEmitter {
     get lowLatencyMode(): boolean;
     // Warning: (ae-setter-with-docs) The doc comment for the property "lowLatencyMode" must appear on the getter, not the setter.
     set lowLatencyMode(mode: boolean);
+    // (undocumented)
+    get mainForwardBufferInfo(): BufferInfo | null;
     get manualLevel(): number;
     get maxAutoLevel(): number;
     get maxLatency(): number;
@@ -965,6 +977,7 @@ class Hls implements HlsEventEmitter {
     get targetLatency(): number | null;
     // (undocumented)
     trigger<E extends keyof HlsListeners>(event: E, eventObject: Parameters<HlsListeners[E]>[1]): boolean;
+    get ttfbEstimate(): number;
     // (undocumented)
     readonly userConfig: Partial<HlsConfig>;
     // (undocumented)

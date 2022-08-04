@@ -2,7 +2,7 @@ import BaseStreamController, { State } from './base-stream-controller';
 import { changeTypeSupported } from '../is-supported';
 import type { NetworkComponentAPI } from '../types/component-api';
 import { Events } from '../events';
-import { BufferHelper } from '../utils/buffer-helper';
+import { BufferHelper, BufferInfo } from '../utils/buffer-helper';
 import type { FragmentTracker } from './fragment-tracker';
 import { FragmentState } from './fragment-tracker';
 import type { Level } from '../types/level';
@@ -324,13 +324,13 @@ export default class StreamController
     if (frag.decryptdata?.keyFormat === 'identity' && !frag.decryptdata?.key) {
       this.loadKey(frag, levelDetails);
     } else {
-      this.loadFragment(frag, levelDetails, targetBufferTime);
+      this.loadFragment(frag, levelInfo, targetBufferTime);
     }
   }
 
   protected loadFragment(
     frag: Fragment,
-    levelDetails: LevelDetails,
+    level: Level,
     targetBufferTime: number
   ) {
     // Check if fragment is not loaded
@@ -350,7 +350,7 @@ export default class StreamController
         this._loadBitrateTestFrag(frag);
       } else {
         this.startFragRequested = true;
-        super.loadFragment(frag, levelDetails, targetBufferTime);
+        super.loadFragment(frag, level, targetBufferTime);
       }
     } else if (fragState === FragmentState.APPENDING) {
       // Lower the buffer size and try again
@@ -1283,7 +1283,7 @@ export default class StreamController
     this.tick();
   }
 
-  private getMainFwdBufferInfo() {
+  public getMainFwdBufferInfo(): BufferInfo | null {
     return this.getFwdBufferInfo(
       this.mediaBuffer ? this.mediaBuffer : this.media,
       PlaylistLevelType.MAIN

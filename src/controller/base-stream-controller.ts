@@ -1,6 +1,6 @@
 import TaskLoop from '../task-loop';
 import { FragmentState } from './fragment-tracker';
-import { Bufferable, BufferHelper } from '../utils/buffer-helper';
+import { Bufferable, BufferHelper, BufferInfo } from '../utils/buffer-helper';
 import { logger } from '../utils/logger';
 import { Events } from '../events';
 import { ErrorDetails } from '../errors';
@@ -13,6 +13,7 @@ import {
   findFragWithCC,
 } from './fragment-finders';
 import {
+  findPart,
   getFragmentWithSN,
   getPartWith,
   updateFragPTSDTS,
@@ -268,9 +269,9 @@ export default class BaseStreamController
       return;
     }
     this.state = State.IDLE;
-    const levelDetails = this.levels[data.frag.level].details;
-    if (levelDetails) {
-      this.loadFragment(data.frag, levelDetails, data.frag.start);
+    const level = this.levels[data.frag.level];
+    if (level.details) {
+      this.loadFragment(data.frag, level, data.frag.start);
     }
   }
 
@@ -312,15 +313,15 @@ export default class BaseStreamController
 
   protected loadFragment(
     frag: Fragment,
-    levelDetails: LevelDetails,
+    level: Level,
     targetBufferTime: number
   ) {
-    this._loadFragForPlayback(frag, levelDetails, targetBufferTime);
+    this._loadFragForPlayback(frag, level, targetBufferTime);
   }
 
   private _loadFragForPlayback(
     frag: Fragment,
-    levelDetails: LevelDetails,
+    level: Level,
     targetBufferTime: number
   ) {
     const progressCallback: FragmentLoadProgressCallback = (
@@ -339,7 +340,7 @@ export default class BaseStreamController
       this._handleFragmentLoadProgress(data);
     };
 
-    this._doFragLoad(frag, levelDetails, targetBufferTime, progressCallback)
+    this._doFragLoad(frag, level, targetBufferTime, progressCallback)
       .then((data) => {
         if (!data) {
           // if we're here we probably needed to backtrack or are waiting for more parts
@@ -527,7 +528,7 @@ export default class BaseStreamController
 
   protected _doFragLoad(
     frag: Fragment,
-    details?: LevelDetails,
+    level?: Level,
     targetBufferTime: number | null = null,
     progressCallback?: FragmentLoadProgressCallback
   ): Promise<PartsLoadedData | FragLoadedData | null> {
@@ -535,6 +536,7 @@ export default class BaseStreamController
       throw new Error('frag load aborted, missing levels');
     }
     targetBufferTime = Math.max(frag.start, targetBufferTime || 0);
+    const details = level?.details;
     if (this.config.lowLatencyMode && details) {
       const partList = details.partList;
       if (partList && progressCallback) {
@@ -564,8 +566,8 @@ export default class BaseStreamController
           });
           return this.doFragPartsLoad(
             frag,
-            partList,
-            partIndex,
+            part,
+            level,
             progressCallback
           ).catch((error: LoadError) => this.handleFragLoadError(error));
         } else if (
@@ -599,24 +601,26 @@ export default class BaseStreamController
 
   private doFragPartsLoad(
     frag: Fragment,
-    partList: Part[],
-    partIndex: number,
+    fromPart: Part,
+    level: Level,
     progressCallback: FragmentLoadProgressCallback
   ): Promise<PartsLoadedData | null> {
     return new Promise(
       (resolve: ResolveFragLoaded, reject: RejectFragLoaded) => {
         const partsLoaded: FragLoadedData[] = [];
-        const loadPartIndex = (index: number) => {
-          const part = partList[index];
+        const initialPartList = level.details?.partList;
+        const loadPart = (part: Part) => {
           this.fragmentLoader
             .loadPart(frag, part, progressCallback)
             .then((partLoadedData: FragLoadedData) => {
               partsLoaded[part.index] = partLoadedData;
               const loadedPart = partLoadedData.part as Part;
               this.hls.trigger(Events.FRAG_LOADED, partLoadedData);
-              const nextPart = partList[index + 1];
-              if (nextPart && nextPart.fragment === frag) {
-                loadPartIndex(index + 1);
+              const nextPart =
+                getPartWith(level, frag.sn as number, part.index + 1) ||
+                findPart(initialPartList, frag.sn as number, part.index + 1);
+              if (nextPart) {
+                loadPart(nextPart);
               } else {
                 return resolve({
                   frag,
@@ -627,7 +631,7 @@ export default class BaseStreamController
             })
             .catch(reject);
         };
-        loadPartIndex(partIndex);
+        loadPart(fromPart);
       }
     );
   }
@@ -747,12 +751,7 @@ export default class BaseStreamController
   protected getFwdBufferInfo(
     bufferable: Bufferable,
     type: PlaylistLevelType
-  ): {
-    len: number;
-    start: number;
-    end: number;
-    nextStart?: number;
-  } | null {
+  ): BufferInfo | null {
     const { config } = this;
     const pos = this.getLoadPosition();
     if (!Number.isFinite(pos)) {
