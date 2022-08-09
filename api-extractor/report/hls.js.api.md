@@ -313,6 +313,10 @@ export class DateRange {
 export type DRMSystemOptions = {
     audioRobustness?: string;
     videoRobustness?: string;
+    persistentState?: MediaKeysRequirement;
+    distinctiveIdentifier?: MediaKeysRequirement;
+    sessionTypes?: string[];
+    sessionType?: string;
 };
 
 // Warning: (ae-missing-release-tag) "ElementaryStreamInfo" is exported by the package, but it is missing a release tag (@alpha, @beta, @public, or @internal)
@@ -352,9 +356,10 @@ export enum ElementaryStreamTypes {
 //
 // @public (undocumented)
 export type EMEControllerConfig = {
-    licenseXhrSetup?: (xhr: XMLHttpRequest, url: string, keySystem: KeySystems) => void | Promise<void>;
-    licenseResponseCallback?: (xhr: XMLHttpRequest, url: string, keySystem: KeySystems) => ArrayBuffer;
+    licenseXhrSetup?: (this: Hls, xhr: XMLHttpRequest, url: string, keyContext: MediaKeySessionContext, licenseChallenge: Uint8Array) => void | Promise<Uint8Array | void>;
+    licenseResponseCallback?: (this: Hls, xhr: XMLHttpRequest, url: string, keyContext: MediaKeySessionContext) => ArrayBuffer;
     emeEnabled: boolean;
+    useEmeEncryptedEvent: boolean;
     widevineLicenseUrl?: string;
     drmSystems: DRMSystemsConfiguration;
     drmSystemOptions: DRMSystemOptions;
@@ -463,6 +468,10 @@ export enum ErrorDetails {
     KEY_SYSTEM_SERVER_CERTIFICATE_UPDATE_FAILED = "keySystemServerCertificateUpdateFailed",
     // (undocumented)
     KEY_SYSTEM_SESSION_UPDATE_FAILED = "keySystemSessionUpdateFailed",
+    // (undocumented)
+    KEY_SYSTEM_STATUS_INTERNAL_ERROR = "keySystemStatusInternalError",
+    // (undocumented)
+    KEY_SYSTEM_STATUS_OUTPUT_RESTRICTED = "keySystemStatusOutputRestricted",
     // (undocumented)
     LEVEL_EMPTY_ERROR = "levelEmptyError",
     // (undocumented)
@@ -740,7 +749,6 @@ export class Fragment extends BaseSegment {
     cc: number;
     // (undocumented)
     clearElementaryStreamInfo(): void;
-    createInitializationVector(segmentNumber: number): Uint8Array;
     // (undocumented)
     data?: Uint8Array;
     // (undocumented)
@@ -761,12 +769,16 @@ export class Fragment extends BaseSegment {
     endPTS?: number;
     // (undocumented)
     initSegment: Fragment | null;
+    // Warning: (ae-forgotten-export) The symbol "KeyLoaderContext" needs to be exported by the entry point hls.d.ts
+    //
     // (undocumented)
     keyLoader: Loader<KeyLoaderContext> | null;
     // (undocumented)
     level: number;
     // (undocumented)
-    levelkey?: LevelKey;
+    levelkeys?: {
+        [key: string]: LevelKey;
+    };
     // (undocumented)
     loader: Loader<FragmentLoaderContext> | null;
     // (undocumented)
@@ -777,9 +789,10 @@ export class Fragment extends BaseSegment {
     programDateTime: number | null;
     // (undocumented)
     rawProgramDateTime: string | null;
-    setDecryptDataFromLevelKey(levelkey: LevelKey, segmentNumber: number): LevelKey;
     // (undocumented)
     setElementaryStreamInfo(type: ElementaryStreamTypes, startPTS: number, endPTS: number, startDTS: number, endDTS: number, partial?: boolean): void;
+    // (undocumented)
+    setKeyFormat(keyFormat: KeySystemFormats): void;
     // (undocumented)
     sn: number | 'initSegment';
     // (undocumented)
@@ -894,7 +907,7 @@ class Hls implements HlsEventEmitter {
     // (undocumented)
     readonly config: HlsConfig;
     // (undocumented)
-    createController(ControllerClass: any, fragmentTracker: any, components: any): any;
+    createController(ControllerClass: any, components: any): any;
     get currentLevel(): number;
     // Warning: (ae-setter-with-docs) The doc comment for the property "currentLevel" must appear on the getter, not the setter.
     set currentLevel(newLevel: number);
@@ -1226,12 +1239,10 @@ export interface InitPTSFoundData {
 export interface KeyLoadedData {
     // (undocumented)
     frag: Fragment;
-}
-
-// Warning: (ae-missing-release-tag) "KeyLoaderContext" is exported by the package, but it is missing a release tag (@alpha, @beta, @public, or @internal)
-//
-// @public (undocumented)
-export interface KeyLoaderContext extends FragmentLoaderContext {
+    // Warning: (ae-forgotten-export) The symbol "KeyLoaderInfo" needs to be exported by the entry point hls.d.ts
+    //
+    // (undocumented)
+    keyInfo: KeyLoaderInfo;
 }
 
 // Warning: (ae-missing-release-tag) "KeyLoadingData" is exported by the package, but it is missing a release tag (@alpha, @beta, @public, or @internal)
@@ -1242,10 +1253,26 @@ export interface KeyLoadingData {
     frag: Fragment;
 }
 
+// Warning: (ae-missing-release-tag) "KeySystemFormats" is exported by the package, but it is missing a release tag (@alpha, @beta, @public, or @internal)
+//
+// @public (undocumented)
+export enum KeySystemFormats {
+    // (undocumented)
+    CLEARKEY = "org.w3.clearkey",
+    // (undocumented)
+    FAIRPLAY = "com.apple.streamingkeydelivery",
+    // (undocumented)
+    PLAYREADY = "com.microsoft.playready",
+    // (undocumented)
+    WIDEVINE = "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed"
+}
+
 // Warning: (ae-missing-release-tag) "KeySystems" is exported by the package, but it is missing a release tag (@alpha, @beta, @public, or @internal)
 //
 // @public (undocumented)
 export enum KeySystems {
+    // (undocumented)
+    CLEARKEY = "org.w3.clearkey",
     // (undocumented)
     FAIRPLAY = "com.apple.fps",
     // (undocumented)
@@ -1478,28 +1505,36 @@ export class LevelDetails {
     version: number | null;
 }
 
+// Warning: (ae-forgotten-export) The symbol "DecryptData" needs to be exported by the entry point hls.d.ts
 // Warning: (ae-missing-release-tag) "LevelKey" is exported by the package, but it is missing a release tag (@alpha, @beta, @public, or @internal)
 //
 // @public (undocumented)
-export class LevelKey {
+export class LevelKey implements DecryptData {
+    constructor(method: string, uri: string, format: string, formatversions?: number[], iv?: Uint8Array | null);
     // (undocumented)
-    static fromURI(uri: string): LevelKey;
+    static clearKeyUriToKeyIdMap(): void;
     // (undocumented)
-    static fromURL(baseUrl: string, relativeUrl: string): LevelKey;
+    readonly encrypted: boolean;
     // (undocumented)
-    iv: Uint8Array | null;
+    getDecryptData(sn: number | 'initSegment'): LevelKey | null;
+    // (undocumented)
+    readonly isCommonEncryption: boolean;
+    // (undocumented)
+    readonly iv: Uint8Array | null;
     // (undocumented)
     key: Uint8Array | null;
     // (undocumented)
-    keyFormat: string | null;
+    readonly keyFormat: string;
     // (undocumented)
-    keyFormatVersions: string | null;
+    readonly keyFormatVersions: number[];
     // (undocumented)
-    keyID: string | null;
+    keyId: Uint8Array | null;
     // (undocumented)
-    method: string | null;
+    readonly method: string;
     // (undocumented)
-    get uri(): string | null;
+    pssh: Uint8Array | null;
+    // (undocumented)
+    readonly uri: string;
 }
 
 // Warning: (ae-missing-release-tag) "LevelLoadedData" is exported by the package, but it is missing a release tag (@alpha, @beta, @public, or @internal)
@@ -2241,19 +2276,20 @@ export interface UserdataSample {
 
 // Warnings were encountered during analysis:
 //
-// src/config.ts:84:3 - (ae-forgotten-export) The symbol "DRMSystemsConfiguration" needs to be exported by the entry point hls.d.ts
-// src/config.ts:187:3 - (ae-forgotten-export) The symbol "ILogger" needs to be exported by the entry point hls.d.ts
-// src/config.ts:197:3 - (ae-forgotten-export) The symbol "AudioStreamController" needs to be exported by the entry point hls.d.ts
-// src/config.ts:198:3 - (ae-forgotten-export) The symbol "AudioTrackController" needs to be exported by the entry point hls.d.ts
-// src/config.ts:200:3 - (ae-forgotten-export) The symbol "SubtitleStreamController" needs to be exported by the entry point hls.d.ts
-// src/config.ts:201:3 - (ae-forgotten-export) The symbol "SubtitleTrackController" needs to be exported by the entry point hls.d.ts
-// src/config.ts:202:3 - (ae-forgotten-export) The symbol "TimelineController" needs to be exported by the entry point hls.d.ts
-// src/config.ts:204:3 - (ae-forgotten-export) The symbol "EMEController" needs to be exported by the entry point hls.d.ts
-// src/config.ts:207:3 - (ae-forgotten-export) The symbol "CMCDController" needs to be exported by the entry point hls.d.ts
-// src/config.ts:209:3 - (ae-forgotten-export) The symbol "AbrController" needs to be exported by the entry point hls.d.ts
-// src/config.ts:210:3 - (ae-forgotten-export) The symbol "BufferController" needs to be exported by the entry point hls.d.ts
-// src/config.ts:211:3 - (ae-forgotten-export) The symbol "CapLevelController" needs to be exported by the entry point hls.d.ts
-// src/config.ts:212:3 - (ae-forgotten-export) The symbol "FPSController" needs to be exported by the entry point hls.d.ts
+// src/config.ts:79:3 - (ae-forgotten-export) The symbol "MediaKeySessionContext" needs to be exported by the entry point hls.d.ts
+// src/config.ts:95:3 - (ae-forgotten-export) The symbol "DRMSystemsConfiguration" needs to be exported by the entry point hls.d.ts
+// src/config.ts:198:3 - (ae-forgotten-export) The symbol "ILogger" needs to be exported by the entry point hls.d.ts
+// src/config.ts:208:3 - (ae-forgotten-export) The symbol "AudioStreamController" needs to be exported by the entry point hls.d.ts
+// src/config.ts:209:3 - (ae-forgotten-export) The symbol "AudioTrackController" needs to be exported by the entry point hls.d.ts
+// src/config.ts:211:3 - (ae-forgotten-export) The symbol "SubtitleStreamController" needs to be exported by the entry point hls.d.ts
+// src/config.ts:212:3 - (ae-forgotten-export) The symbol "SubtitleTrackController" needs to be exported by the entry point hls.d.ts
+// src/config.ts:213:3 - (ae-forgotten-export) The symbol "TimelineController" needs to be exported by the entry point hls.d.ts
+// src/config.ts:215:3 - (ae-forgotten-export) The symbol "EMEController" needs to be exported by the entry point hls.d.ts
+// src/config.ts:218:3 - (ae-forgotten-export) The symbol "CMCDController" needs to be exported by the entry point hls.d.ts
+// src/config.ts:220:3 - (ae-forgotten-export) The symbol "AbrController" needs to be exported by the entry point hls.d.ts
+// src/config.ts:221:3 - (ae-forgotten-export) The symbol "BufferController" needs to be exported by the entry point hls.d.ts
+// src/config.ts:222:3 - (ae-forgotten-export) The symbol "CapLevelController" needs to be exported by the entry point hls.d.ts
+// src/config.ts:223:3 - (ae-forgotten-export) The symbol "FPSController" needs to be exported by the entry point hls.d.ts
 
 // (No @packageDocumentation comment for this package)
 
